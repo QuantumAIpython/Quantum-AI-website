@@ -1,93 +1,113 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quantum AI</title>
-    <link rel="stylesheet" href="styles.css"> <!-- Optional CSS file for styles -->
-    <style>
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            margin: 0;
-            padding: 0;
-            background-color: #121212;
-            color: #e0e0e0;
-        }
-        header {
-            background: #1e1e1e;
-            padding: 20px 0;
-            text-align: center;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
-        }
-        main {
-            padding: 20px;
-            max-width: 800px;
-            margin: auto;
-            background: #1e1e1e;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
-        }
-        h2 {
-            border-bottom: 2px solid #03a9f4;
-            padding-bottom: 10px;
-        }
-        ul {
-            list-style-type: disc;
-            margin-left: 20px;
-        }
-        footer {
-            text-align: center;
-            padding: 15px 0;
-            background: #1e1e1e;
-            color: #bbb;
-            position: relative;
-            bottom: 0;
-            width: 100%;
-        }
-        .repo-link {
-            color: #03a9f4;
-            text-decoration: underline;
-        }
-        .repo-link:hover {
-            color: #fff;
-        }
-    </style>
-</head>
-<body>
-    <header>
-        <h1>Welcome to Quantum AI</h1>
-    </header>
+#![no_std]
+#![no_main]
 
-    <main>
-        <section id="about">
-            <h2>About Quantum AI</h2>
-            <p>Quantum AI is a cutting-edge platform that combines the principles of quantum computing with artificial intelligence to solve complex problems at unprecedented speeds.</p>
-        </section>
+use core::panic::PanicInfo;
+use x86_64::instructions::port::Port;
 
-        <section id="features">
-            <h2>Features</h2>
-            <ul>
-                <li>Enhanced computational speed</li>
-                <li>Advanced machine learning algorithms</li>
-                <li>Real-time data processing</li>
-                <li>Seamless integration with existing AI frameworks</li>
-            </ul>
-        </section>
+const VGA_BUFFER: *mut u8 = 0xb8000 as *mut u8;
 
-        <section id="repo">
-            <h2>Open Source Repository</h2>
-            <p>Check out our open-source repository on GitHub to explore the code, contribute, and learn more:</p>
-            <p><a class="repo-link" href="https://github.com/QuantumAIpython/QuantumAI" target="_blank">Visit the Quantum AI Repository</a></p>
-        </section>
+#[derive(Debug)]
+struct File {
+    name: String,
+    size: usize,
+    data: Vec<u8>,
+}
 
-        <section id="contact">
-            <h2>Contact Us</h2>
-            <p>If you have any questions or would like to learn more about Quantum AI, please <a href="mailto:info@quantumai.com" style="color: #03a9f4; text-decoration: underline;">email us</a>.</p>
-        </section>
-    </main>
+#[derive(Debug)]
+struct Directory {
+    name: String,
+    files: Vec<File>,
+    subdirs: Vec<Directory>,
+}
 
-    <footer>
-        <p>&copy; 2024 Quantum AI. All Rights Reserved.</p>
-    </footer>
-</body>
-</html>
+#[derive(Debug)]
+struct FileSystem {
+    root: Directory,
+}
+
+impl FileSystem {
+    fn new() -> Self {
+        FileSystem {
+            root: Directory {
+                name: String::from("/"),
+                files: Vec::new(),
+                subdirs: Vec::new(),
+            },
+        }
+    }
+
+    fn create_file(&mut self, path: &str, name: &str, data: Vec<u8>) -> Result<(), &'static str> {
+        let dir = self.find_directory_mut(path)?;
+        let new_file = File {
+            name: name.to_string(),
+            size: data.len(),
+            data,
+        };
+        dir.files.push(new_file);
+        Ok(())
+    }
+
+    fn find_directory_mut(&mut self, path: &str) -> Result<&mut Directory, &'static str> {
+        if path == "/" {
+            Ok(&mut self.root)
+        } else {
+            Err("Directory not found")
+        }
+    }
+
+    fn list_files(&self, path: &str) -> Result<&[File], &'static str> {
+        let dir = self.find_directory(path)?;
+        Ok(&dir.files)
+    }
+
+    fn find_directory(&self, path: &str) -> Result<&Directory, &'static str> {
+        if path == "/" {
+            Ok(&self.root)
+        } else {
+            Err("Directory not found")
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn _start() -> ! {
+    init();
+    loop {}
+}
+
+fn init() {
+    clear_screen();
+    print("Hello, DOS Kernel!");
+
+    let mut file_system = init_file_system();
+    
+    file_system.create_file("/", "file1.txt", b"Hello, world!".to_vec()).unwrap();
+    file_system.create_file("/", "file2.txt", b"Another file content".to_vec()).unwrap();
+
+    let files = file_system.list_files("/").unwrap();
+    for file in files {
+        print(&file.name);
+    }
+}
+
+fn clear_screen() {
+    let buffer = VGA_BUFFER as *mut [[u8; 2]; 80 * 25];
+    unsafe { *buffer = [[0; 2]; 80 * 25] };
+}
+
+fn print(text: &str) {
+    let buffer = VGA_BUFFER as *mut [[u8; 2]; 80 * 25];
+    let mut index = 0;
+    for &byte in text.as_bytes() {
+        unsafe {
+            (*buffer)[index][0] = byte;
+            (*buffer)[index][1] = 0x07; // Light gray on black
+        }
+        index += 1;
+    }
+}
+
+#[panic_handler]
+fn panic(_info: &PanicInfo) -> ! {
+    loop {}
+}
